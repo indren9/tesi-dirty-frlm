@@ -1,0 +1,39 @@
+{
+  "_meta": {
+    "file": "DIRTY_FRLM_SCENARIO_v01.template.json",
+    "status": "TEMPLATE / DEMONSTRATOR / NON CANONICAL",
+    "rule": "No methodological value is approved by this template. Undecided methodological fields remain null.",
+    "absolute_path_dependency_allowed": false
+  },
+  "gravity_dirty": {
+    "q_beta_policy": null,
+    "Q": null,
+    "beta": null,
+    "correction_scaling_policy": null
+  },
+  "ev": {
+    "penetration": null,
+    "charging_need": null,
+    "vehicle_range_energy": {
+      "range_km": null,
+      "energy_consumption_kwh_per_km": null,
+      "usable_energy_kwh": null
+    }
+  },
+  "candidate_generation": {
+    "policy": null,
+    "parameters": null
+  },
+  "charging_power_capacity": {
+    "policy": null,
+    "charger_power_kw": null,
+    "capacity_policy": null
+  },
+  "frlm_costs": {
+    "policy": null,
+    "fixed_cost": null,
+    "unit_cost": null,
+    "grid_cost": null
+  },
+  "coverage_target": null
+}

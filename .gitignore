@@ -1,0 +1,41 @@
+# Python environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Local IDE
+.vscode/
+
+# Local configuration / secrets
+.env
+.env.*
+!.env.example
+
+# Runtime / scratch outputs
+cache/
+scratch/
+staging/
+output/
+outputs/
+
+# CPLEX generated artifacts
+*.lp
+*.mps
+*.sav
+*.mst
+*.sol
+*.prm
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
