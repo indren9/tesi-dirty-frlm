@@ -14,13 +14,10 @@ from dirty_frlm.light_dirty_od import resolve_dirty_root, run_materialization  #
 def main() -> None:
     parser = argparse.ArgumentParser(description="Materialize LIGHT_DIRTY_OD_v01.")
     parser.add_argument("--dirty-root")
-    parser.add_argument("--node", required=True)
     args = parser.parse_args()
     result = run_materialization(
         resolve_dirty_root(args.dirty_root),
         REPO_ROOT,
-        Path(args.node).resolve(),
-        REPO_ROOT / "scripts" / "build_light_dirty_od_xlsx.mjs",
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))
 

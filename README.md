@@ -54,8 +54,7 @@ Run from the repository root:
 
 ```powershell
 .venv\Scripts\python.exe scripts\run_light_dirty_od_v01.py `
-  --dirty-root $env:DIRTY_FRLM_ROOT `
-  --node C:\path\to\node.exe
+  --dirty-root $env:DIRTY_FRLM_ROOT
 ```
 
 ## Scientific status

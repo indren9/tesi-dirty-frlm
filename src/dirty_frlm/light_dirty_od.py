@@ -13,7 +13,6 @@ import json
 import math
 import os
 import shutil
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +20,8 @@ from typing import Mapping
 
 import numpy as np
 import pandas as pd
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 
 BETA_DIRTY = 0.045953794473
@@ -252,6 +253,132 @@ def csv_payload(frame: pd.DataFrame) -> bytes:
     return buffer.getvalue().encode("utf-8")
 
 
+def build_xlsx(frame: pd.DataFrame, metadata: dict[str, object], output_path: Path) -> dict[str, object]:
+    workbook = Workbook()
+    data_sheet = workbook.active
+    data_sheet.title = DATASET_LABEL
+    data_sheet.sheet_view.showGridLines = False
+    data_sheet.freeze_panes = "A2"
+    data_sheet.append(list(frame.columns))
+    for row in frame.itertuples(index=False, name=None):
+        data_sheet.append(row)
+
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    header_font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+    body_font = Font(name="Arial", size=10, color="1F1F1F")
+    for cell in data_sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    data_sheet.row_dimensions[1].height = 24
+    widths = {"A": 16, "B": 28, "C": 20, "D": 28, "E": 18, "F": 18, "G": 18, "H": 18}
+    for column, width in widths.items():
+        data_sheet.column_dimensions[column].width = width
+    for row in data_sheet.iter_rows(min_row=2, max_row=len(frame) + 1):
+        for cell in row:
+            cell.font = body_font
+            cell.alignment = Alignment(vertical="center")
+        row[0].number_format = "0"
+        row[2].number_format = "0"
+        for cell in row[4:8]:
+            cell.number_format = "0.000000000000"
+
+    meta = workbook.create_sheet("Metadata_QA")
+    meta.sheet_view.showGridLines = False
+    meta["A2"] = DATASET_LABEL
+    meta["A2"].font = Font(name="Arial", size=14, bold=True, color="1F1F1F")
+    meta["A3"].border = Border(bottom=Side(style="double", color="1F4E78"))
+    meta["B3"].border = Border(bottom=Side(style="double", color="1F4E78"))
+    metadata_rows = [
+        ("Field", "Value"),
+        ("Dataset label", metadata["dataset_label"]),
+        ("Scale label", metadata["scale_label"]),
+        ("Status", metadata["status"]),
+        ("beta_dirty_demonstrator", metadata["beta_dirty_demonstrator"]),
+        ("k_dirty_demonstrator", metadata["k_dirty_demonstrator"]),
+        ("M1 k* anchor", metadata["m1_k_anchor"]),
+        ("Q_v0 (veh/day)", metadata["q_v0_veh_day"]),
+        ("Q_dirty noncommuting (veh/day)", metadata["q_dirty_noncommuting_veh_day"]),
+        ("Method N", "N_dirty_ij = 0.15 * N_v0_ij"),
+        ("Method T", "T_dirty_ij = C_ISTAT_ij + N_dirty_ij"),
+        ("Interpretation", metadata["assumption"]),
+        ("D1 original", metadata["historical_status"]["D1_original"]),
+        ("D1-R1", metadata["historical_status"]["D1_R1"]),
+    ]
+    for row_index, values in enumerate(metadata_rows, start=5):
+        meta.cell(row_index, 1, values[0])
+        meta.cell(row_index, 2, values[1])
+    qa_header_row = 21
+    meta.cell(qa_header_row, 1, "Mandatory QA")
+    meta.cell(qa_header_row, 2, "Result")
+    for offset, (name, passed) in enumerate(metadata["qa"]["checks"].items(), start=1):
+        meta.cell(qa_header_row + offset, 1, name)
+        meta.cell(qa_header_row + offset, 2, "PASS" if passed else "FAIL")
+    for header_row in (5, qa_header_row):
+        for cell in meta[header_row][0:2]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+    for row in meta.iter_rows(min_row=2, max_row=qa_header_row + len(metadata["qa"]["checks"]), max_col=2):
+        for cell in row:
+            if cell.row not in (5, qa_header_row):
+                cell.font = body_font
+            cell.alignment = Alignment(vertical="center", wrap_text=cell.column == 2)
+    for row_index in range(6, qa_header_row + len(metadata["qa"]["checks"]) + 1):
+        meta.cell(row_index, 1).font = Font(name="Arial", size=10, bold=True, color="1F1F1F")
+    for row_index in range(9, 14):
+        meta.cell(row_index, 2).number_format = "0.000000000000"
+    meta.column_dimensions["A"].width = 34
+    meta.column_dimensions["B"].width = 96
+    meta.row_dimensions[16].height = 42
+    meta.row_dimensions[17].height = 28
+    meta.row_dimensions[18].height = 28
+    workbook.save(output_path)
+
+    check = load_workbook(output_path, read_only=True, data_only=False)
+    sheet = check[DATASET_LABEL]
+    metadata_sheet = check["Metadata_QA"]
+    expected_header = tuple(frame.columns)
+    actual_header = tuple(cell.value for cell in next(sheet.iter_rows(min_row=1, max_row=1)))
+    sample_rows: list[dict[str, object]] = []
+    for excel_row in (2, len(frame) // 2 + 1, len(frame) + 1):
+        actual = tuple(cell.value for cell in next(sheet.iter_rows(min_row=excel_row, max_row=excel_row)))
+        expected = tuple(frame.iloc[excel_row - 2].tolist())
+        row_match = all(
+            (a == e) if not isinstance(e, float) else math.isclose(float(a), e, rel_tol=0.0, abs_tol=1e-12)
+            for a, e in zip(actual, expected)
+        )
+        sample_rows.append({"excel_row": excel_row, "match": row_match})
+    formula_count = sum(
+        1
+        for row in sheet.iter_rows()
+        for cell in row
+        if isinstance(cell.value, str) and cell.value.startswith("=")
+    )
+    evidence = {
+        "status": "PASS",
+        "authoring_engine": "openpyxl fallback after artifact-tool full-scale export exceeded the Node.js heap limit",
+        "sheet_names": check.sheetnames,
+        "data_rows": sheet.max_row - 1,
+        "data_columns": sheet.max_column,
+        "header_match": actual_header == expected_header,
+        "sample_rows": sample_rows,
+        "formula_count": formula_count,
+        "metadata_dataset_label": metadata_sheet["B6"].value,
+    }
+    check.close()
+    if not (
+        evidence["data_rows"] == EXPECTED_OD_ROWS
+        and evidence["data_columns"] == len(expected_header)
+        and evidence["header_match"]
+        and all(item["match"] for item in sample_rows)
+        and formula_count == 0
+        and evidence["metadata_dataset_label"] == DATASET_LABEL
+    ):
+        raise RuntimeError(f"XLSX round-trip verification failed: {evidence}")
+    return evidence
+
+
 def check_materialization(
     inputs: MaterializationInputs,
     first: pd.DataFrame,
@@ -347,8 +474,6 @@ def git_info(repo_root: Path) -> dict[str, object]:
 def run_materialization(
     root: Path,
     repo_root: Path,
-    node_executable: Path,
-    xlsx_builder: Path,
 ) -> dict[str, object]:
     started = datetime.now(timezone.utc)
     output_dir = root / "04_OUTPUT" / "light_dirty_od_v01"
@@ -403,23 +528,7 @@ def run_materialization(
     }
     metadata_path = work_dir / "LIGHT_DIRTY_OD_v01_metadata_for_xlsx.json"
     metadata_path.write_bytes(json_bytes(metadata))
-    preview_data = work_dir / "LIGHT_DIRTY_OD_v01_preview_data.png"
-    preview_meta = work_dir / "LIGHT_DIRTY_OD_v01_preview_metadata.png"
-    inspect_path = work_dir / "LIGHT_DIRTY_OD_v01_artifact_tool_inspect.json"
-    subprocess.run(
-        [
-            str(node_executable),
-            str(xlsx_builder),
-            str(staged_csv),
-            str(metadata_path),
-            str(staged_xlsx),
-            str(preview_data),
-            str(preview_meta),
-            str(inspect_path),
-        ],
-        cwd=repo_root,
-        check=True,
-    )
+    xlsx_verification = build_xlsx(first, metadata, staged_xlsx)
 
     reloaded = pd.read_csv(staged_csv)
     csv_reload_scale_residual = float(
@@ -517,8 +626,7 @@ def run_materialization(
             "time_b5_recalculated": False,
             "gamma_osm_recalculated": False,
             "g_osm_operativo_recalculated": False,
-            "artifact_tool_inspect": str(inspect_path),
-            "visual_previews": [str(preview_data), str(preview_meta)],
+            "xlsx_verification": xlsx_verification,
         }
     )
     qa_path = reporting_dir / "LIGHT_DIRTY_OD_v01_QA_evidence.json"
@@ -594,6 +702,7 @@ def run_materialization(
         f"| `Q_dirty=232894.42771965` | PASS | actual `{qa['actuals']['sum_N_dirty_ij']:.14f}`; residual `{qa['actuals']['q_dirty_residual']:.3e}` |",
         f"| `T_dirty=C+N_dirty` | PASS | max row error `{qa['actuals']['t_dirty_identity_max_abs_error']:.3e}` |",
         "| Determinism | PASS | two independent in-memory materializations equal; CSV bytes and SHA256 equal |",
+        "| XLSX round-trip | PASS | 46,010 rows, 8 columns, exact header, first/middle/last rows match, zero formulas |",
         "| Provenance | PASS | exact source paths and SHA256 recorded in QA evidence and manifest |",
         "| Frozen snapshot unchanged | PASS | all 12 snapshot files hash-verified before run and size/mtime stable after run |",
         f"| Canonical artifacts unchanged | PASS | all 12 declared source-path states stable ({canonical_present_count} present; {canonical_missing_count} unavailable); only verified snapshot copies were read |",
