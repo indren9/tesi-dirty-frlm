@@ -80,9 +80,16 @@ def file_state(path: Path) -> dict[str, object]:
     stat = path.stat()
     return {
         "path": str(path),
+        "exists": True,
         "size_bytes": stat.st_size,
         "mtime_ns": stat.st_mtime_ns,
     }
+
+
+def optional_file_state(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {"path": str(path), "exists": False, "size_bytes": None, "mtime_ns": None}
+    return file_state(path)
 
 
 def verify_snapshot(root: Path) -> dict[str, object]:
@@ -118,7 +125,7 @@ def verify_snapshot(root: Path) -> dict[str, object]:
         source = Path(row["source_path"])
         canonical_states.append(
             {
-                **file_state(source),
+                **optional_file_state(source),
                 "expected_sha256": row["source_sha256"],
                 "source_status": row.get("source_status", ""),
                 "source_original_status": row.get("source_original_status", ""),
@@ -312,8 +319,14 @@ def check_materialization(
 
 
 def compare_states(before: list[dict[str, object]], after: list[dict[str, object]]) -> bool:
-    before_keyed = {str(item["path"]): (item["size_bytes"], item["mtime_ns"]) for item in before}
-    after_keyed = {str(item["path"]): (item["size_bytes"], item["mtime_ns"]) for item in after}
+    before_keyed = {
+        str(item["path"]): (item.get("exists", True), item["size_bytes"], item["mtime_ns"])
+        for item in before
+    }
+    after_keyed = {
+        str(item["path"]): (item.get("exists", True), item["size_bytes"], item["mtime_ns"])
+        for item in after
+    }
     return before_keyed == after_keyed
 
 
@@ -450,7 +463,9 @@ def run_materialization(
         {"path": item["path"], "size_bytes": item["size_bytes"], "mtime_ns": item["mtime_ns"]}
         for item in snapshot_pre["snapshot_checks"]
     ]
-    canonical_after = [file_state(Path(item["path"])) for item in canonical_pre]
+    canonical_after = [optional_file_state(Path(item["path"])) for item in canonical_pre]
+    canonical_present_count = sum(bool(item["exists"]) for item in canonical_pre)
+    canonical_missing_count = len(canonical_pre) - canonical_present_count
     snapshot_unchanged = compare_states(snapshot_before_states, snapshot_after_states)
     canonical_unchanged = compare_states(canonical_pre, canonical_after)
     if commuting_hash_pre != commuting_hash_post or not commuting_logical_post:
@@ -494,6 +509,8 @@ def run_materialization(
             "commuting_sha256_after": commuting_hash_post,
             "snapshot_unchanged_during_run": snapshot_unchanged,
             "canonical_artifacts_unchanged_during_run": canonical_unchanged,
+            "canonical_source_paths_present": canonical_present_count,
+            "canonical_source_paths_unavailable": canonical_missing_count,
             "routing_recalculated": False,
             "shortest_paths_recalculated": False,
             "product_lambda_recalculated": False,
@@ -579,7 +596,7 @@ def run_materialization(
         "| Determinism | PASS | two independent in-memory materializations equal; CSV bytes and SHA256 equal |",
         "| Provenance | PASS | exact source paths and SHA256 recorded in QA evidence and manifest |",
         "| Frozen snapshot unchanged | PASS | all 12 snapshot files hash-verified before run and size/mtime stable after run |",
-        "| Canonical artifacts unchanged | PASS | all 12 canonical source paths size/mtime stable; only snapshot copies were read |",
+        f"| Canonical artifacts unchanged | PASS | all 12 declared source-path states stable ({canonical_present_count} present; {canonical_missing_count} unavailable); only verified snapshot copies were read |",
         "| Forbidden recalculation | PASS | network, shortest paths, PRODUCT-LAMBDA, TIME_B5, Gamma_OSM and G_OSM_operativo not recalculated |",
         f"| Git scope clean | PASS | branch `{git_post['branch']}`; commit `{git_post['commit']}`; porcelain empty before and after |",
         "| Append-only publication | PASS | versioned output/report directories were absent and created once; no existing output overwritten |",
