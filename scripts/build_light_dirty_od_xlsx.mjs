@@ -115,8 +115,8 @@ await fs.writeFile(
   JSON.stringify({ data: dataInspect.ndjson, metadata: metaInspect.ndjson, errors: errors.ndjson }, null, 2) + "\n",
   "utf8",
 );
-const previewData = await workbook.render({ sheetName: "LIGHT_DIRTY_OD_v01", autoCrop: "all", scale: 1.4, format: "png" });
-const previewMeta = await workbook.render({ sheetName: "Metadata_QA", autoCrop: "all", scale: 1.4, format: "png" });
+const previewData = await workbook.render({ sheetName: "LIGHT_DIRTY_OD_v01", range: "A1:H18", scale: 1.4, format: "png" });
+const previewMeta = await workbook.render({ sheetName: "Metadata_QA", range: "A1:B34", scale: 1.4, format: "png" });
 await fs.writeFile(previewDataPath, new Uint8Array(await previewData.arrayBuffer()));
 await fs.writeFile(previewMetaPath, new Uint8Array(await previewMeta.arrayBuffer()));
 const output = await SpreadsheetFile.exportXlsx(workbook);
