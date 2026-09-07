@@ -25,6 +25,9 @@ staging/
 output/
 outputs/
 
+# Local JavaScript dependency junction
+node_modules/
+
 # CPLEX generated artifacts
 *.lp
 *.mps

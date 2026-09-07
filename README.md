@@ -43,6 +43,21 @@ The complete Python environment is frozen in:
 
 `requirements-runtime-v01.txt`
 
+## Materialized Dirty demand
+
+`LIGHT_DIRTY_OD_v01` preserves the Gravity v0 spatial structure with
+`beta_dirty=0.045953794473` and applies the ratified demonstrator scale
+`k_dirty=0.15`. The scale is a rounded engineering assumption anchored to the
+M1 diagnostic `k*=0.154582128861`; it is not a scientific calibration.
+
+Run from the repository root:
+
+```powershell
+.venv\Scripts\python.exe scripts\run_light_dirty_od_v01.py `
+  --dirty-root $env:DIRTY_FRLM_ROOT `
+  --node C:\path\to\node.exe
+```
+
 ## Scientific status
 
 Observed, derived and scenario quantities must remain explicitly
